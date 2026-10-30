@@ -240,13 +240,16 @@ async function sendSubmissionEmail(sub) {
   const day = dates[dates.length - 1];
   const units = totals.reduce((a, t) => a + t.qty, 0);
 
-  const totalsCsv = toCSV([
-    ['Date processed', 'Technician', 'Part', 'SKU', 'Total quantity'],
-    ...totals.map(t => [dates.join('; '), techs.join('; '), t.name, t.sku, t.qty])
-  ]);
-  const detailRows = [['Date processed', 'Time', 'Technician', 'Part', 'SKU', 'Quantity']];
-  for (const c of sub.counts) for (const i of c.items) detailRows.push([c.date, c.time, c.tech || sub.tech, i.name, i.sku, i.qty]);
-  const detailCsv = toCSV(detailRows);
+  const grouped = new Map();
+  for (const c of sub.counts) for (const i of c.items) {
+    const tech = c.tech || sub.tech;
+    const k = [c.date, tech.toLowerCase(), i.sku ? 'sku:' + i.sku.toLowerCase() : 'name:' + i.name.toLowerCase()].join('|');
+    const cur = grouped.get(k) || { date: c.date, tech, name: i.name, sku: i.sku, qty: 0 };
+    cur.qty += i.qty;
+    grouped.set(k, cur);
+  }
+  const reportList = [...grouped.values()].sort((a, b) => a.date.localeCompare(b.date) || a.tech.localeCompare(b.tech) || a.name.localeCompare(b.name));
+  const reportCsv = toCSV([['Date processed', 'Technician', 'Part', 'SKU', 'Quantity'], ...reportList.map(r => [r.date, r.tech, r.name, r.sku, r.qty])]);
 
   const th = 'text-align:left;padding:4px 10px;border-bottom:1px solid #ccc';
   const td = 'padding:4px 10px;border-bottom:1px solid #eee';
@@ -257,9 +260,9 @@ ${sub.submitted ? '<b>Submitted:</b> ' + escHtml(sub.submitted) + '<br>' : ''}<b
 <table style="border-collapse:collapse"><tr><th style="${th}">Part</th><th style="${th}">SKU</th><th style="${th};text-align:right">Qty</th></tr>
 ${totals.map(t => `<tr><td style="${td}">${escHtml(t.name)}</td><td style="${td}">${escHtml(t.sku)}</td><td style="${td};text-align:right">${t.qty}</td></tr>`).join('\n')}
 </table>
-<p>The totals and detail spreadsheets are attached.</p></div>`;
+<p>The spreadsheet is attached.</p></div>`;
   const text = `Technician: ${who}\nDate processed: ${dates.join(', ')}\n${sub.submitted ? 'Submitted: ' + sub.submitted + '\n' : ''}Counts: ${sub.counts.length}  Units: ${units}\n\n` +
-    totals.map(t => `${t.qty}  ${t.name}${t.sku ? ' (' + t.sku + ')' : ''}`).join('\n') + '\n\nTotals and detail spreadsheets are attached.';
+    totals.map(t => `${t.qty}  ${t.name}${t.sku ? ' (' + t.sku + ')' : ''}`).join('\n') + '\n\nThe spreadsheet is attached.';
 
   const r = await fetch(RESEND_BASE_URL + '/emails', {
     method: 'POST',
@@ -271,8 +274,7 @@ ${totals.map(t => `<tr><td style="${td}">${escHtml(t.name)}</td><td style="${td}
       html,
       text,
       attachments: [
-        { filename: `inventory-totals-${day}.csv`, content: Buffer.from(totalsCsv, 'utf8').toString('base64') },
-        { filename: `inventory-detail-${day}.csv`, content: Buffer.from(detailCsv, 'utf8').toString('base64') }
+        { filename: `inventory-count-${day}.csv`, content: Buffer.from(reportCsv, 'utf8').toString('base64') }
       ]
     }),
     signal: AbortSignal.timeout(30000)

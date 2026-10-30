@@ -548,15 +548,16 @@ details.count summary::-webkit-details-marker { display: none; }
     const [y, m, d] = String(ymd).split('-').map(Number);
     try { return new Date(y, m - 1, d).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return String(ymd); }
   }
-  function detailRows() {
-    const rows = [['Date processed', 'Time', 'Technician', 'Part', 'SKU', 'Quantity']];
-    for (const c of [...S.saved].reverse()) { const s = stamp(c.ts); for (const it of c.items) rows.push([dateOf(c), s.time, c.tech || '', it.name, it.sku || '', it.qty]); }
-    return rows;
-  }
-  function totalRows() {
-    const uniq = f => [...new Set(S.saved.map(f).filter(Boolean))].sort().join('; ');
-    const dates = uniq(dateOf), techs = uniq(c => c.tech);
-    return [['Date processed', 'Technician', 'Part', 'SKU', 'Total quantity'], ...computeTotals().map(t => [dates, techs, t.name, t.sku, t.qty])];
+  function reportRows() {
+    const m = new Map();
+    for (const c of S.saved) for (const it of c.items) {
+      const tech = c.tech || S.tech.trim();
+      const k = [dateOf(c), norm(tech), it.sku ? 'sku:' + norm(it.sku) : 'name:' + norm(it.name)].join('|');
+      const cur = m.get(k) || { date: dateOf(c), tech, name: it.name, sku: it.sku || '', qty: 0 };
+      cur.qty += it.qty; m.set(k, cur);
+    }
+    const list = [...m.values()].sort((a, b) => a.date.localeCompare(b.date) || a.tech.localeCompare(b.tech) || a.name.localeCompare(b.name));
+    return [['Date processed', 'Technician', 'Part', 'SKU', 'Quantity'], ...list.map(r => [r.date, r.tech, r.name, r.sku, r.qty])];
   }
   function csvCell(v) {
     if (typeof v === 'number') return String(v);
@@ -566,9 +567,9 @@ details.count summary::-webkit-details-marker { display: none; }
   }
   const toCSV = rows => '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 
-  function exportRows(kind) {
-    const rows = kind === 'detail' ? detailRows() : totalRows();
-    const name = 'shelf-count-' + kind + '-' + stamp(Date.now()).date + '.csv';
+  function exportRows() {
+    const rows = reportRows();
+    const name = 'inventory-count-' + stamp(Date.now()).date + '.csv';
     try {
       const url = URL.createObjectURL(new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8' }));
       const a = h('a', { href: url, download: name });
@@ -638,15 +639,13 @@ details.count summary::-webkit-details-marker { display: none; }
       }))));
     v.append(h('div', { class: 'card' },
       h('h2', { text: cfg.emailReady ? 'Send or export' : 'Export' }),
-      cfg.emailReady ? h('p', { class: 'muted', text: 'Submit emails the totals and detail spreadsheets to the office, then clears this session.' }) : null,
+      cfg.emailReady ? h('p', { class: 'muted', text: 'Submit emails the spreadsheet to the office, then clears this session.' }) : null,
       S.sendError ? h('p', { class: 'notice', text: S.sendError }) : null,
       cfg.emailReady ? (S.sending
         ? h('button', { class: 'btn primary wide', type: 'button', disabled: true }, 'Sending…')
         : confirmBtn('btn primary wide', 'Submit and email', 'Tap again to email ' + plural(S.saved.length, 'count', 'counts'), submitSession)) : null,
-      h('p', { class: 'muted', text: 'Or save the spreadsheets (CSV) to this phone. They open in Excel or Sheets.' }),
-      h('div', { class: 'btnrow' },
-        h('button', { class: cfg.emailReady ? 'btn' : 'btn primary', type: 'button', onclick: () => exportRows('totals') }, 'Export totals'),
-        h('button', { class: 'btn', type: 'button', onclick: () => exportRows('detail') }, 'Export detail')),
+      h('p', { class: 'muted', text: (cfg.emailReady ? 'Or save' : 'Save') + ' the spreadsheet (CSV) to this phone. It opens in Excel or Sheets.' }),
+      h('button', { class: cfg.emailReady ? 'btn wide' : 'btn primary wide', type: 'button', onclick: () => exportRows() }, 'Export spreadsheet'),
       confirmBtn('btn ghost', 'Clear session', 'Tap again to clear all counts', () => {
         S.saved = []; persist(); renderSession(); renderTally(); toast('Session cleared.');
       })));

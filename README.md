@@ -27,7 +27,7 @@ Each count is one request billed to your Anthropic account.
 
 ## Email setup
 
-When a technician taps **Submit and email** on the Session tab, the server emails the totals and detail spreadsheets (CSV) to the office and the phone clears its session. The email shows the technician name and the date processed, and the spreadsheets include both as columns.
+When a technician taps **Submit and email** on the Session tab, the server emails one spreadsheet (CSV) to the office and the phone clears its session. The email shows the technician name and the date processed, and the spreadsheet has both as columns. Each part appears once per technician and date, with the quantities from every photo added together.
 
 1. Create an account at https://resend.com and create an API key. Set it as `RESEND_API_KEY`.
 2. Set `EMAIL_TO` to the address or addresses that should receive the counts.
