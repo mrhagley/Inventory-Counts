@@ -53,6 +53,8 @@ body {
   padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
 }
 .col { max-width: 560px; margin-inline: auto; display: flex; flex-direction: column; gap: 14px; }
+/* Nested columns must stretch to the full column width. Auto side margins would shrink them to their content and center them. */
+.col > .col { margin-inline: 0; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 h1, h2 { font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; text-wrap: balance; }
@@ -62,7 +64,7 @@ p { margin: 0; }
 .muted { color: var(--muted); font-size: 15px; }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .logo { width: 44px; height: 44px; flex: none; display: block; border-radius: 8px; }
-.top { padding-inline: 17px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .tally { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -145,7 +147,7 @@ details.count summary::-webkit-details-marker { display: none; }
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--surface); border-top: 1px solid var(--line);
   padding: 6px max(16px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
 }
-.tabs-in { max-width: 560px; margin-inline: auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tabs-in { max-width: 560px; margin-inline: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .tab { position: relative; min-height: 52px; border: 0; background: none; color: var(--muted); font: 700 19px/1 var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; border-radius: 6px; cursor: pointer; border-top: 4px solid transparent; }
 .tab[aria-current="page"] { color: var(--accent); border-top-color: var(--accent); }
 .badge { display: inline-block; margin-left: 6px; background: var(--tag); color: var(--tag-ink); font-size: 15px; padding: 2px 6px; border-radius: 4px; vertical-align: 1px; }
@@ -178,22 +180,12 @@ details.count summary::-webkit-details-marker { display: none; }
     <div id="session-body" class="col"></div>
   </section>
 
-  <section id="v-parts" class="col" hidden>
-    <div class="card">
-      <h2>Parts list</h2>
-      <p class="muted">One part per line as Name | SKU. The SKU is optional. The counter uses these names and SKUs so totals line up across photos and technicians. Edits are stored on this phone only. Restoring the original list brings back the list that comes with the app.</p>
-      <textarea id="parts-text" aria-label="Parts list, one per line" spellcheck="false"></textarea>
-      <p class="muted" id="parts-n"></p>
-      <div id="parts-reset"></div>
-    </div>
-  </section>
 </div>
 
 <nav class="tabs" aria-label="Sections">
   <div class="tabs-in">
     <button class="tab" type="button" data-tab="count" aria-current="page">Count</button>
     <button class="tab" type="button" data-tab="session">Session<span class="badge" id="badge" hidden></span></button>
-    <button class="tab" type="button" data-tab="parts">Parts</button>
   </div>
 </nav>
 
@@ -207,11 +199,6 @@ details.count summary::-webkit-details-marker { display: none; }
   'use strict';
   const KEY = 'shelfcount.v2';
   const CODE_KEY = 'shelfcount.code';
-  const partLine = p => p.name + (p.sku ? ' | ' + p.sku : '');
-  const parseParts = text => text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
-    const i = l.lastIndexOf('|');
-    return i < 0 ? { name: l, sku: '' } : { name: l.slice(0, i).trim(), sku: l.slice(i + 1).trim() };
-  }).filter(p => p.name);
   const $ = (s, r = document) => r.querySelector(s);
   let uidN = 0;
   const uid = () => 'i' + Date.now().toString(36) + (uidN++);
@@ -239,7 +226,7 @@ details.count summary::-webkit-details-marker { display: none; }
     try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
   }
   function persist() {
-    try { localStorage.setItem(KEY, JSON.stringify({ tech: S.tech, parts: S.parts, partsCustom: S.partsCustom, saved: S.saved })); } catch (e) { /* storage unavailable */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ tech: S.tech, parts: S.parts, saved: S.saved })); } catch (e) { /* storage unavailable */ }
   }
   function loadCode() { try { return localStorage.getItem(CODE_KEY) || ''; } catch (e) { return ''; } }
   function saveCode(v) { try { localStorage.setItem(CODE_KEY, v); } catch (e) { /* storage unavailable */ } }
@@ -251,7 +238,6 @@ details.count summary::-webkit-details-marker { display: none; }
   const S = {
     tech: typeof prev.tech === 'string' ? prev.tech : '',
     parts: savedParts,
-    partsCustom: Boolean(prev.partsCustom) && savedParts.length > 0,
     saved: Array.isArray(prev.saved) ? prev.saved.filter(c => c && Array.isArray(c.items)) : [],
     code: loadCode(),
     date: stamp(Date.now()).date,
@@ -273,21 +259,21 @@ details.count summary::-webkit-details-marker { display: none; }
     if (!S.current) renderCount();
   })();
 
-  async function loadParts() {
-    if (S.partsCustom) return;
-    try {
-      const r = await fetch('parts.json', { cache: 'no-store' });
-      if (!r.ok) return;
-      const j = await r.json();
-      const list = (Array.isArray(j) ? j : []).map(p => Array.isArray(p)
-        ? { name: String(p[0] || '').trim(), sku: String(p[1] || '').trim() }
-        : { name: String((p && p.name) || '').trim(), sku: String((p && p.sku) || '').trim() }).filter(p => p.name);
-      if (!list.length) return;
-      S.parts = list; persist(); refreshDatalist();
-      if (S.tab === 'parts') renderParts();
-    } catch (e) { /* keep the last list this phone saved */ }
+  let partsPromise = null;
+  function loadParts() {
+    partsPromise = (async () => {
+      try {
+        const r = await fetch('api/parts', { cache: 'no-store', headers: S.code ? { 'x-access-code': S.code } : {} });
+        if (!r.ok) return;
+        const j = await r.json();
+        const list = (Array.isArray(j) ? j : []).map(p => ({ name: String((p && p.name) || '').trim(), sku: String((p && p.sku) || '').trim() })).filter(p => p.name);
+        if (!list.length) return;
+        S.parts = list; persist(); refreshDatalist();
+      } catch (e) { /* keep the last list saved on this phone */ }
+    })();
+    return partsPromise;
   }
-  const partsPromise = loadParts();
+  loadParts();
 
   /* ---------- toast, helpers ---------- */
   let tt;
@@ -346,7 +332,7 @@ details.count summary::-webkit-details-marker { display: none; }
     if (S.code) headers['x-access-code'] = S.code;
     let r;
     try {
-      r = await fetch('api/count', { method: 'POST', headers, signal, body: JSON.stringify({ image: data, mediaType: blob.type || 'image/jpeg', parts: S.parts }) });
+      r = await fetch('api/count', { method: 'POST', headers, signal, body: JSON.stringify({ image: data, mediaType: blob.type || 'image/jpeg' }) });
     } catch (e) {
       throw { code: e && e.name === 'AbortError' ? 'cancelled' : 'network' };
     }
@@ -626,27 +612,15 @@ details.count summary::-webkit-details-marker { display: none; }
   /* ---------- parts tab ---------- */
   function refreshDatalist() {
     $('#partsList').replaceChildren(...S.parts.map(p => h('option', { value: p.name, label: p.sku || null })));
-    $('#parts-n').textContent = plural(S.parts.length, 'part', 'parts') + ' on the list';
   }
-  function renderParts() {
-    $('#parts-text').value = S.parts.map(partLine).join('\n');
-    $('#parts-reset').replaceChildren(confirmBtn('btn small', 'Restore original list', 'Tap again to replace the list', async () => {
-      S.partsCustom = false; persist();
-      await loadParts();
-      renderParts(); toast('Original list restored.');
-    }));
-    refreshDatalist();
-  }
-
   /* ---------- tabs + wiring ---------- */
   function setTab(name) {
     S.tab = name;
-    for (const id of ['count', 'session', 'parts']) $('#v-' + id).hidden = id !== name;
+    for (const id of ['count', 'session']) $('#v-' + id).hidden = id !== name;
     document.querySelectorAll('.tab').forEach(b => {
       if (b.dataset.tab === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
     if (name === 'session') renderSession();
-    if (name === 'parts') renderParts();
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
@@ -660,11 +634,7 @@ details.count summary::-webkit-details-marker { display: none; }
   });
   $('#tech').addEventListener('input', e => { S.tech = e.target.value; persist(); });
   $('#code').addEventListener('input', e => { S.code = e.target.value.trim(); saveCode(S.code); });
-  $('#parts-text').addEventListener('input', e => {
-    S.parts = parseParts(e.target.value);
-    S.partsCustom = true;
-    persist(); refreshDatalist();
-  });
+  $('#code').addEventListener('change', () => loadParts());
   for (const id of ['cam', 'pick']) {
     $('#' + id).addEventListener('change', e => {
       const f = e.target.files && e.target.files[0];

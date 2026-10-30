@@ -9,18 +9,20 @@ const PORT = Number(process.env.PORT) || 3000;
 const API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5-5';
 const BASE_URL = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
+const WORKSPACE_ID = process.env.ANTHROPIC_WORKSPACE_ID || '';
 const ACCESS_CODE = process.env.ACCESS_CODE || '';
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MINUTE) || 20;
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const PARTS_FILE = path.join(__dirname, 'parts.json');
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function loadDefaultParts() {
   try {
-    const list = JSON.parse(fs.readFileSync(path.join(PUBLIC_DIR, 'parts.json'), 'utf8'));
+    const list = JSON.parse(fs.readFileSync(PARTS_FILE, 'utf8'));
     return cleanParts(list) || [];
   } catch (e) {
-    console.error('Could not read public/parts.json:', e.message);
+    console.error('Could not read parts.json:', e.message);
     return [];
   }
 }
@@ -113,6 +115,12 @@ app.get('/api/config', (req, res) => {
   res.json({ needsCode: Boolean(ACCESS_CODE), aiReady: Boolean(API_KEY) });
 });
 
+app.get('/api/parts', (req, res) => {
+  if (!codeOk(req)) return res.status(401).json({ code: 'auth', message: 'Access code is missing or wrong.' });
+  res.set('Cache-Control', 'no-store');
+  res.json(DEFAULT_PARTS);
+});
+
 app.post('/api/count', express.json({ limit: '12mb' }), async (req, res) => {
   const fail = (status, code, message) => res.status(status).json({ code, message });
 
@@ -126,8 +134,7 @@ app.post('/api/count', express.json({ limit: '12mb' }), async (req, res) => {
   if (!ALLOWED_TYPES.has(mediaType)) return fail(400, 'bad_request', 'Photo must be JPEG, PNG, WebP or GIF.');
   if (!/^[A-Za-z0-9+/=]+$/.test(image)) return fail(400, 'bad_request', 'Photo data is not valid base64.');
 
-  let parts = req.body.parts === undefined ? null : cleanParts(req.body.parts);
-  if (!parts || !parts.length) parts = DEFAULT_PARTS;
+  const parts = DEFAULT_PARTS;
 
   try {
     const upstream = await fetch(BASE_URL + '/v1/messages', {
@@ -135,7 +142,8 @@ app.post('/api/count', express.json({ limit: '12mb' }), async (req, res) => {
       headers: {
         'content-type': 'application/json',
         'x-api-key': API_KEY,
-        'anthropic-version': '2023-06-01'
+        'anthropic-version': '2023-06-01',
+        ...(WORKSPACE_ID ? { 'anthropic-workspace-id': WORKSPACE_ID } : {})
       },
       body: JSON.stringify({
         model: MODEL,

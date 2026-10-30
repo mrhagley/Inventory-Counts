@@ -2,13 +2,13 @@
 
 A phone web app for inventory counts. A technician photographs a shelf or bin, Claude counts the parts, the technician corrects any numbers, and the counts export to a spreadsheet. It does not keep a running inventory.
 
-The parts list (name and SKU) lives in `public/parts.json`.
+The parts list (name and SKU) lives in `parts.json` at the project root. Technicians cannot see or edit it in the app.
 
 ## How it works
 
 - `public/index.html` is the whole front end. No build step.
 - `server.js` is a small Express server. It serves the page and exposes `POST /api/count`, which sends the photo and parts list to the Anthropic API and returns the counts. Your API key stays on the server.
-- Counts and the technician's edits to the parts list are stored in the phone's browser only. Nothing is saved on the server.
+- Counts are stored in the phone's browser only. Nothing is saved on the server.
 
 ## Deploy on Railway
 
@@ -17,6 +17,7 @@ The parts list (name and SKU) lives in `public/parts.json`.
 3. Open the service's **Variables** tab and add:
    - `ANTHROPIC_API_KEY`: a key from https://console.anthropic.com
    - `ACCESS_CODE`: any code you choose. Technicians enter it once on their phone. Without it, anyone who finds the link can spend your API credit.
+   - Only if the API returns a "not scoped to a workspace" error: `ANTHROPIC_WORKSPACE_ID`, or create a new key inside a workspace instead.
    - Optional: `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`) and `RATE_LIMIT_PER_MINUTE` (default `20` per IP address).
 4. Open **Settings**, then **Networking**, and choose **Generate Domain**.
 5. Open the domain on a phone. Use **Share**, then **Add to Home Screen**, so it opens like an app.
@@ -35,7 +36,7 @@ Open http://localhost:3000. The camera button needs HTTPS on a real phone, so te
 
 ## Updating the parts list
 
-Edit `public/parts.json` (an array of `{ "name": "...", "sku": "..." }`) and push. Phones that have not edited their list pick up the new one on the next load. A phone that has edited its list keeps its own until the technician taps **Restore original list** on the Parts tab.
+Edit `parts.json` (an array of `{ "name": "...", "sku": "..." }`) and push. Railway redeploys and every phone picks up the new list on its next load. The server uses this list for counting. The app also loads it behind the scenes to match names and offer autocomplete when a technician adds an item by hand. It is not shown anywhere in the app.
 
 ## Notes
 
