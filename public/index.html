@@ -242,21 +242,24 @@ details.count summary::-webkit-details-marker { display: none; }
     code: loadCode(),
     date: stamp(Date.now()).date,
     dateTouched: false,
+    sending: false,
+    sendError: '',
     current: null,
     tab: 'count'
   };
-  const cfg = { ready: false, needsCode: false, aiReady: true };
+  const cfg = { ready: false, needsCode: false, aiReady: true, emailReady: false };
   let abortCtl = null;
 
   /* ---------- server config and parts list ---------- */
   const cfgPromise = (async () => {
     try {
       const r = await fetch('api/config', { cache: 'no-store' });
-      if (r.ok) { const j = await r.json(); cfg.needsCode = Boolean(j.needsCode); cfg.aiReady = j.aiReady !== false; }
+      if (r.ok) { const j = await r.json(); cfg.needsCode = Boolean(j.needsCode); cfg.aiReady = j.aiReady !== false; cfg.emailReady = Boolean(j.emailReady); }
     } catch (e) { /* offline: keep defaults */ }
     cfg.ready = true;
     $('#code-field').hidden = !cfg.needsCode;
     if (!S.current) renderCount();
+    if (S.tab === 'session') renderSession();
   })();
 
   let partsPromise = null;
@@ -534,7 +537,7 @@ details.count summary::-webkit-details-marker { display: none; }
   }
 
   function fmtTime(ts) {
-    try { return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
+    try { return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
   }
   function stamp(ts) {
     const d = new Date(ts); const p = n => String(n).padStart(2, '0');
@@ -546,11 +549,15 @@ details.count summary::-webkit-details-marker { display: none; }
     try { return new Date(y, m - 1, d).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return String(ymd); }
   }
   function detailRows() {
-    const rows = [['Date', 'Time', 'Technician', 'Part', 'SKU', 'Quantity']];
+    const rows = [['Date processed', 'Time', 'Technician', 'Part', 'SKU', 'Quantity']];
     for (const c of [...S.saved].reverse()) { const s = stamp(c.ts); for (const it of c.items) rows.push([dateOf(c), s.time, c.tech || '', it.name, it.sku || '', it.qty]); }
     return rows;
   }
-  function totalRows() { return [['Part', 'SKU', 'Total quantity'], ...computeTotals().map(t => [t.name, t.sku, t.qty])]; }
+  function totalRows() {
+    const uniq = f => [...new Set(S.saved.map(f).filter(Boolean))].sort().join('; ');
+    const dates = uniq(dateOf), techs = uniq(c => c.tech);
+    return [['Date processed', 'Technician', 'Part', 'SKU', 'Total quantity'], ...computeTotals().map(t => [dates, techs, t.name, t.sku, t.qty])];
+  }
   function csvCell(v) {
     if (typeof v === 'number') return String(v);
     let s = String(v == null ? '' : v);
@@ -569,6 +576,37 @@ details.count summary::-webkit-details-marker { display: none; }
       setTimeout(() => URL.revokeObjectURL(url), 5000);
       toast('Saved ' + name);
     } catch (e) { toast("Couldn't create the file. Try again."); }
+  }
+
+  function submitErr(code) {
+    switch (code) {
+      case 'auth': return 'The access code is missing or wrong. Enter it on the Count tab, then try again.';
+      case 'not_configured': return "Email isn't set up on this server yet.";
+      case 'rate_limited': return 'Too many submissions in a row. Wait a minute, then try again.';
+      default: return "Couldn't send the email. Your counts are still saved on this phone. Try again.";
+    }
+  }
+  async function submitSession() {
+    if (S.sending) return;
+    if (!S.tech.trim()) { S.sendError = 'Enter your name in the Technician box on the Count tab first.'; renderSession(); return; }
+    S.sending = true; S.sendError = ''; renderSession();
+    try {
+      await cfgPromise;
+      const headers = { 'content-type': 'application/json' };
+      if (S.code) headers['x-access-code'] = S.code;
+      const counts = [...S.saved].reverse().map(c => ({
+        date: dateOf(c), time: stamp(c.ts).time, tech: c.tech || '',
+        items: c.items.map(i => ({ name: i.name, sku: i.sku || '', qty: i.qty }))
+      }));
+      const r = await fetch('api/submit', { method: 'POST', headers, body: JSON.stringify({ tech: S.tech.trim(), submitted: fmtTime(Date.now()), counts }) });
+      let j = null;
+      try { j = await r.json(); } catch (e) { /* no JSON body */ }
+      if (!r.ok) throw { code: (j && j.code) || 'http_' + r.status };
+      S.saved = []; persist(); renderTally();
+      toast('Sent. Your counts were emailed and this session is cleared.');
+    } catch (e) { S.sendError = submitErr(e && e.code); }
+    S.sending = false;
+    renderSession();
   }
 
   function renderSession() {
@@ -599,10 +637,15 @@ details.count summary::-webkit-details-marker { display: none; }
             })));
       }))));
     v.append(h('div', { class: 'card' },
-      h('h2', { text: 'Export' }),
-      h('p', { class: 'muted', text: 'Spreadsheet files (CSV) that open in Excel or Sheets.' }),
+      h('h2', { text: cfg.emailReady ? 'Send or export' : 'Export' }),
+      cfg.emailReady ? h('p', { class: 'muted', text: 'Submit emails the totals and detail spreadsheets to the office, then clears this session.' }) : null,
+      S.sendError ? h('p', { class: 'notice', text: S.sendError }) : null,
+      cfg.emailReady ? (S.sending
+        ? h('button', { class: 'btn primary wide', type: 'button', disabled: true }, 'Sending…')
+        : confirmBtn('btn primary wide', 'Submit and email', 'Tap again to email ' + plural(S.saved.length, 'count', 'counts'), submitSession)) : null,
+      h('p', { class: 'muted', text: 'Or save the spreadsheets (CSV) to this phone. They open in Excel or Sheets.' }),
       h('div', { class: 'btnrow' },
-        h('button', { class: 'btn primary', type: 'button', onclick: () => exportRows('totals') }, 'Export totals'),
+        h('button', { class: cfg.emailReady ? 'btn' : 'btn primary', type: 'button', onclick: () => exportRows('totals') }, 'Export totals'),
         h('button', { class: 'btn', type: 'button', onclick: () => exportRows('detail') }, 'Export detail')),
       confirmBtn('btn ghost', 'Clear session', 'Tap again to clear all counts', () => {
         S.saved = []; persist(); renderSession(); renderTally(); toast('Session cleared.');

@@ -8,7 +8,7 @@ The parts list (name and SKU) lives in `parts.json` at the project root. Technic
 
 - `public/index.html` is the whole front end. No build step.
 - `server.js` is a small Express server. It serves the page and exposes `POST /api/count`, which sends the photo and parts list to the Anthropic API and returns the counts. Your API key stays on the server.
-- Counts are stored in the phone's browser only. Nothing is saved on the server.
+- Counts are stored in the phone's browser only. Nothing is saved on the server. Submitted counts are emailed, not stored.
 
 ## Deploy on Railway
 
@@ -18,11 +18,23 @@ The parts list (name and SKU) lives in `parts.json` at the project root. Technic
    - `ANTHROPIC_API_KEY`: a key from https://console.anthropic.com
    - `ACCESS_CODE`: any code you choose. Technicians enter it once on their phone. Without it, anyone who finds the link can spend your API credit.
    - Only if the API returns a "not scoped to a workspace" error: `ANTHROPIC_WORKSPACE_ID`, or create a new key inside a workspace instead.
+   - For email submissions: `RESEND_API_KEY` and `EMAIL_TO` (comma-separated addresses). See "Email setup" below.
    - Optional: `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`) and `RATE_LIMIT_PER_MINUTE` (default `20` per IP address).
 4. Open **Settings**, then **Networking**, and choose **Generate Domain**.
 5. Open the domain on a phone. Use **Share**, then **Add to Home Screen**, so it opens like an app.
 
 Each count is one request billed to your Anthropic account.
+
+## Email setup
+
+When a technician taps **Submit and email** on the Session tab, the server emails the totals and detail spreadsheets (CSV) to the office and the phone clears its session. The email shows the technician name and the date processed, and the spreadsheets include both as columns.
+
+1. Create an account at https://resend.com and create an API key. Set it as `RESEND_API_KEY`.
+2. Set `EMAIL_TO` to the address or addresses that should receive the counts.
+3. Testing: with no `EMAIL_FROM` set, Resend only delivers to the email address on your Resend account.
+4. To send to anyone else, add and verify your company's domain in Resend (a few DNS records), then set `EMAIL_FROM`, for example `Inventory Count <counts@yourcompany.com>`.
+
+If `RESEND_API_KEY` or `EMAIL_TO` is missing, the Submit button is hidden and the app works as before, with CSV downloads only.
 
 ## Run locally
 
