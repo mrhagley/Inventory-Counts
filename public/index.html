@@ -1,0 +1,681 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Inventory Count">
+<title>Inventory Count</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%231B5E9F'/%3E%3Crect x='14' y='20' width='36' height='24' rx='4' fill='%23FFD84D'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column built for a phone held in one hand. Counts are set like shelf tags
+   (yellow, condensed numerals). Bottom tab bar switches Count / Session / Parts. */
+:root {
+  color-scheme: light;
+  --bg: #E9EEF1;
+  --surface: #FFFFFF;
+  --surface-2: #F2F5F7;
+  --ink: #14212B;
+  --muted: #546775;
+  --line: #C9D3DA;
+  --accent: #1B5E9F;
+  --accent-ink: #FFFFFF;
+  --tag: #FFD84D;
+  --tag-ink: #1B1600;
+  --warn: #8A5600;
+  --warn-bg: #FBEFD3;
+  --danger: #A82E24;
+  --font-display: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --font-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0E151B; --surface: #16202A; --surface-2: #1D2934; --ink: #E7EEF3; --muted: #93A5B2;
+    --line: #2C3B47; --accent: #5FA2E6; --accent-ink: #07131D; --tag: #FFD84D; --tag-ink: #1B1600;
+    --warn: #F0C060; --warn-bg: #3A2E10; --danger: #F08A80;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 17px/1.4 var(--font-body);
+  padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+  padding-top: calc(18px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+}
+.col { max-width: 560px; margin-inline: auto; display: flex; flex-direction: column; gap: 14px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+h1, h2 { font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; margin: 0; text-wrap: balance; }
+h1 { font-size: 32px; font-weight: 700; line-height: 1; }
+h2 { font-size: 20px; font-weight: 700; }
+p { margin: 0; }
+.muted { color: var(--muted); font-size: 15px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo { width: 44px; height: 44px; flex: none; display: block; border-radius: 8px; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tally { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.who { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.who .wide { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field label { font: 600 14px/1 var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+input[type="text"], input[type="password"], input[type="date"], textarea {
+  width: 100%; font: 500 17px/1.3 var(--font-body); color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0;
+}
+input[type="date"] { min-height: 50px; }
+textarea { resize: vertical; min-height: 280px; line-height: 1.5; }
+input:focus-visible, textarea:focus-visible, button:focus-visible, .btn:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 2px;
+}
+
+.btn {
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  min-height: 52px; padding: 8px 18px; border-radius: 6px; cursor: pointer;
+  font: 700 20px/1 var(--font-display); text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--ink); background: var(--surface); border: 2px solid var(--line); -webkit-tap-highlight-color: transparent;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn.small { min-height: 44px; font-size: 17px; padding: 6px 14px; }
+.btn.wide { width: 100%; }
+.btn.armed { border-color: var(--danger); color: var(--danger); }
+.btn[disabled] { opacity: 0.5; }
+.btnrow { display: flex; gap: 10px; flex-wrap: wrap; }
+.btnrow > * { flex: 1 1 140px; }
+.link { background: none; border: 0; color: var(--accent); font: 600 16px var(--font-body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 10px 0; align-self: flex-start; }
+
+.capture .lede { font-size: 18px; text-wrap: pretty; max-width: 40ch; }
+.notice { background: var(--warn-bg); color: var(--warn); padding: 10px 12px; border-radius: 6px; font-weight: 500; font-size: 15px; }
+.shot { width: 100%; max-height: 230px; object-fit: cover; border-radius: 6px; background: var(--surface-2); }
+.hint { color: var(--muted); font-size: 15px; }
+
+.status { display: flex; gap: 14px; align-items: center; }
+.status-t { font: 700 22px/1.1 var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; }
+.spin { width: 28px; height: 28px; flex: none; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--accent); border-right-color: var(--accent); } }
+
+.rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.row { display: flex; flex-direction: column; gap: 10px; padding-block: 14px; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; padding-top: 0; }
+.row-ctrl { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.step { display: flex; gap: 6px; align-items: center; }
+.sbtn { width: 48px; height: 48px; border-radius: 6px; border: 2px solid var(--line); background: var(--surface); color: var(--ink); font: 700 28px/1 var(--font-display); cursor: pointer; }
+.qty {
+  width: 76px; height: 48px; text-align: center; border: 0; border-radius: 4px; background: var(--tag); color: var(--tag-ink);
+  font: 700 30px/1 var(--font-display); -moz-appearance: textfield; appearance: textfield; font-variant-numeric: tabular-nums;
+}
+.qty::-webkit-inner-spin-button, .qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.rm { background: none; border: 0; color: var(--muted); font: 600 15px var(--font-body); padding: 12px 6px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill { background: var(--warn-bg); color: var(--warn); font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+.rnote { color: var(--muted); font-size: 14px; }
+.sku { display: block; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sku:empty { display: none; }
+.totalbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-top: 2px solid var(--ink); padding-top: 12px; }
+.total { font: 700 22px/1 var(--font-display); text-transform: uppercase; letter-spacing: 0.03em; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-direction: column; gap: 10px; }
+
+.empty { align-items: flex-start; }
+.empty-t { font: 700 22px/1.1 var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; }
+.trow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 10px; border-top: 1px solid var(--line); }
+.trow:first-of-type { border-top: 0; }
+.trow > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.tagnum { background: var(--tag); color: var(--tag-ink); font: 700 24px/1 var(--font-display); padding: 6px 10px; border-radius: 4px; min-width: 54px; text-align: center; font-variant-numeric: tabular-nums; flex: none; }
+details.count { border-top: 1px solid var(--line); padding-block: 4px; }
+details.count:first-of-type { border-top: 0; }
+details.count summary { cursor: pointer; padding-block: 10px; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+details.count summary::-webkit-details-marker { display: none; }
+.c-title { font: 700 20px/1.1 var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; }
+.c-body { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; }
+
+.tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--surface); border-top: 1px solid var(--line);
+  padding: 6px max(16px, env(safe-area-inset-right, 0px)) calc(6px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.tabs-in { max-width: 560px; margin-inline: auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tab { position: relative; min-height: 52px; border: 0; background: none; color: var(--muted); font: 700 19px/1 var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; border-radius: 6px; cursor: pointer; border-top: 4px solid transparent; }
+.tab[aria-current="page"] { color: var(--accent); border-top-color: var(--accent); }
+.badge { display: inline-block; margin-left: 6px; background: var(--tag); color: var(--tag-ink); font-size: 15px; padding: 2px 6px; border-radius: 4px; vertical-align: 1px; }
+
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 6; bottom: calc(82px + env(safe-area-inset-bottom, 0px));
+  max-width: min(520px, calc(100% - 32px)); background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 6px; font-weight: 500; font-size: 16px; text-align: center;
+}
+@media (max-width: 380px) { .who { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="col">
+  <header class="top">
+    <div class="brand"><img class="logo" src="logo.jpg" alt="Secure 24" width="44" height="44"><h1>Inventory Count</h1></div>
+    <p class="tally" id="tally"></p>
+  </header>
+
+  <section id="v-count" class="col">
+    <div class="card who">
+      <div class="field"><label for="tech">Technician</label><input id="tech" type="text" autocomplete="off" placeholder="Your name"></div>
+      <div class="field"><label for="date">Date</label><input id="date" type="date"></div>
+      <div class="field wide" id="code-field" hidden><label for="code">Access code</label><input id="code" type="password" autocomplete="off" placeholder="Ask your manager"></div>
+    </div>
+    <div id="count-body" class="col"></div>
+  </section>
+
+  <section id="v-session" class="col" hidden>
+    <div id="session-body" class="col"></div>
+  </section>
+
+  <section id="v-parts" class="col" hidden>
+    <div class="card">
+      <h2>Parts list</h2>
+      <p class="muted">One part per line as Name | SKU. The SKU is optional. The counter uses these names and SKUs so totals line up across photos and technicians. Edits are stored on this phone only. Restoring the original list brings back the list that comes with the app.</p>
+      <textarea id="parts-text" aria-label="Parts list, one per line" spellcheck="false"></textarea>
+      <p class="muted" id="parts-n"></p>
+      <div id="parts-reset"></div>
+    </div>
+  </section>
+</div>
+
+<nav class="tabs" aria-label="Sections">
+  <div class="tabs-in">
+    <button class="tab" type="button" data-tab="count" aria-current="page">Count</button>
+    <button class="tab" type="button" data-tab="session">Session<span class="badge" id="badge" hidden></span></button>
+    <button class="tab" type="button" data-tab="parts">Parts</button>
+  </div>
+</nav>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<input id="cam" class="sr" type="file" accept="image/*" capture="environment" tabindex="-1">
+<input id="pick" class="sr" type="file" accept="image/*" tabindex="-1">
+<datalist id="partsList"></datalist>
+
+<script>
+(() => {
+  'use strict';
+  const KEY = 'shelfcount.v2';
+  const CODE_KEY = 'shelfcount.code';
+  const partLine = p => p.name + (p.sku ? ' | ' + p.sku : '');
+  const parseParts = text => text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const i = l.lastIndexOf('|');
+    return i < 0 ? { name: l, sku: '' } : { name: l.slice(0, i).trim(), sku: l.slice(i + 1).trim() };
+  }).filter(p => p.name);
+  const $ = (s, r = document) => r.querySelector(s);
+  let uidN = 0;
+  const uid = () => 'i' + Date.now().toString(36) + (uidN++);
+
+  function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    let val;
+    for (const [k, v] of Object.entries(props || {})) {
+      if (v == null || v === false) continue;
+      if (k === 'class') el.className = v;
+      else if (k === 'text') el.textContent = v;
+      else if (k === 'value') val = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? '' : v);
+    }
+    if (val !== undefined) el.value = val;
+    for (const k of kids.flat()) {
+      if (k == null || k === false) continue;
+      el.append(k.nodeType ? k : document.createTextNode(String(k)));
+    }
+    return el;
+  }
+
+  function load() {
+    try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function persist() {
+    try { localStorage.setItem(KEY, JSON.stringify({ tech: S.tech, parts: S.parts, partsCustom: S.partsCustom, saved: S.saved })); } catch (e) { /* storage unavailable */ }
+  }
+  function loadCode() { try { return localStorage.getItem(CODE_KEY) || ''; } catch (e) { return ''; } }
+  function saveCode(v) { try { localStorage.setItem(CODE_KEY, v); } catch (e) { /* storage unavailable */ } }
+
+  const prev = load() || {};
+  const savedParts = Array.isArray(prev.parts)
+    ? prev.parts.filter(p => p && typeof p.name === 'string' && p.name).map(p => ({ name: p.name, sku: String(p.sku || '') }))
+    : [];
+  const S = {
+    tech: typeof prev.tech === 'string' ? prev.tech : '',
+    parts: savedParts,
+    partsCustom: Boolean(prev.partsCustom) && savedParts.length > 0,
+    saved: Array.isArray(prev.saved) ? prev.saved.filter(c => c && Array.isArray(c.items)) : [],
+    code: loadCode(),
+    date: stamp(Date.now()).date,
+    dateTouched: false,
+    current: null,
+    tab: 'count'
+  };
+  const cfg = { ready: false, needsCode: false, aiReady: true };
+  let abortCtl = null;
+
+  /* ---------- server config and parts list ---------- */
+  const cfgPromise = (async () => {
+    try {
+      const r = await fetch('api/config', { cache: 'no-store' });
+      if (r.ok) { const j = await r.json(); cfg.needsCode = Boolean(j.needsCode); cfg.aiReady = j.aiReady !== false; }
+    } catch (e) { /* offline: keep defaults */ }
+    cfg.ready = true;
+    $('#code-field').hidden = !cfg.needsCode;
+    if (!S.current) renderCount();
+  })();
+
+  async function loadParts() {
+    if (S.partsCustom) return;
+    try {
+      const r = await fetch('parts.json', { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      const list = (Array.isArray(j) ? j : []).map(p => Array.isArray(p)
+        ? { name: String(p[0] || '').trim(), sku: String(p[1] || '').trim() }
+        : { name: String((p && p.name) || '').trim(), sku: String((p && p.sku) || '').trim() }).filter(p => p.name);
+      if (!list.length) return;
+      S.parts = list; persist(); refreshDatalist();
+      if (S.tab === 'parts') renderParts();
+    } catch (e) { /* keep the last list this phone saved */ }
+  }
+  const partsPromise = loadParts();
+
+  /* ---------- toast, helpers ---------- */
+  let tt;
+  function toast(msg) {
+    const t = $('#toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(tt); tt = setTimeout(() => { t.hidden = true; }, 3400);
+  }
+  function confirmBtn(cls, label, armedLabel, fn) {
+    let armed = false, timer;
+    const b = h('button', { class: cls, type: 'button', onclick: () => {
+      if (!armed) {
+        armed = true; b.textContent = armedLabel; b.classList.add('armed');
+        timer = setTimeout(() => { armed = false; b.textContent = label; b.classList.remove('armed'); }, 3500);
+      } else { clearTimeout(timer); fn(); }
+    } }, label);
+    return b;
+  }
+  const norm = s => String(s || '').trim().toLowerCase();
+  const plural = (n, a, b) => n + ' ' + (n === 1 ? a : b);
+  const kbd = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } };
+
+  /* ---------- counting ---------- */
+  async function prepareImage(file) {
+    const max = 1600;
+    const draw = async bmp => {
+      const sc = Math.min(1, max / Math.max(bmp.width, bmp.height));
+      const w = Math.round(bmp.width * sc), ht = Math.round(bmp.height * sc);
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = ht;
+      cv.getContext('2d').drawImage(bmp, 0, 0, w, ht);
+      if (bmp.close) bmp.close();
+      return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.85));
+    };
+    try {
+      let bmp;
+      try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+      catch (e) { bmp = await createImageBitmap(file); }
+      const blob = await draw(bmp);
+      if (blob) return blob;
+    } catch (e) { /* send the original file instead */ }
+    return file;
+  }
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => { const s = String(fr.result); resolve(s.slice(s.indexOf(',') + 1)); };
+      fr.onerror = () => reject(fr.error);
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  async function countPhoto(file, signal) {
+    const blob = await prepareImage(file);
+    const data = await blobToBase64(blob);
+    const headers = { 'content-type': 'application/json' };
+    if (S.code) headers['x-access-code'] = S.code;
+    let r;
+    try {
+      r = await fetch('api/count', { method: 'POST', headers, signal, body: JSON.stringify({ image: data, mediaType: blob.type || 'image/jpeg', parts: S.parts }) });
+    } catch (e) {
+      throw { code: e && e.name === 'AbortError' ? 'cancelled' : 'network' };
+    }
+    let j = null;
+    try { j = await r.json(); } catch (e) { /* no JSON body */ }
+    if (!r.ok) throw { code: (j && j.code) || 'http_' + r.status };
+    return j && j.items;
+  }
+
+  const findPart = name => S.parts.find(p => norm(p.name) === norm(name)) || null;
+
+  function toItem(r) {
+    if (!r || typeof r !== 'object') return null;
+    let name = String(r.name == null ? '' : r.name).trim();
+    if (!name) return null;
+    let onList = r.onList !== false;
+    let sku = String(r.sku == null ? '' : r.sku).trim();
+    const hit = findPart(name) || (sku ? S.parts.find(p => norm(p.sku) === norm(sku)) : null);
+    if (hit) { name = hit.name; sku = hit.sku; onList = true; }
+    else sku = '';
+    const n = Math.round(Number(r.count));
+    const conf = ['high', 'medium', 'low'].includes(r.confidence) ? r.confidence : 'high';
+    return { id: uid(), name, sku, qty: Number.isFinite(n) && n > 0 ? n : 0, onList, conf, note: String(r.note || '').trim() };
+  }
+
+  function errCopy(code) {
+    switch (code) {
+      case 'auth': return 'The access code is missing or wrong. Enter it above, then tap Recount.';
+      case 'not_configured': return "Photo counting isn't set up on this server yet. Enter counts by hand.";
+      case 'rate_limited': return 'Too many counts in a row. Wait a minute, then tap Recount.';
+      case 'too_large': case 'http_413': return 'That photo is too large. Take it again.';
+      case 'network': return "Couldn't reach the server. Check your signal, then tap Recount.";
+      case 'unreadable': return "Couldn't read a count from that photo. Retake it closer and with more light.";
+      default: return 'The count was interrupted. Tap Recount to try again.';
+    }
+  }
+
+  async function startCount(file) {
+    if (S.current && S.current.photoUrl) URL.revokeObjectURL(S.current.photoUrl);
+    S.current = { file, photoUrl: URL.createObjectURL(file), items: [], status: 'counting', error: null, info: null, manual: false };
+    await runCount();
+  }
+
+  async function runCount() {
+    const c = S.current;
+    if (!c || !c.file) return;
+    c.status = 'counting'; c.error = null; c.info = null;
+    renderCount();
+    const ctl = new AbortController();
+    abortCtl = ctl;
+    try {
+      await Promise.all([cfgPromise, partsPromise]);
+      if (!cfg.aiReady) throw { code: 'not_configured' };
+      const arr = await countPhoto(c.file, ctl.signal);
+      if (S.current !== c) return;
+      if (!Array.isArray(arr)) throw { code: 'unreadable' };
+      c.items = arr.map(toItem).filter(Boolean);
+      c.info = c.items.length ? null : 'Nothing countable found in that photo. Retake it closer, or add items by hand.';
+      c.status = 'done';
+    } catch (e) {
+      if (S.current !== c) return;
+      c.status = 'done';
+      if (e && e.code === 'cancelled') c.info = 'Stopped. Tap Recount to try again, or add items by hand.';
+      else c.error = errCopy(e && e.code);
+    }
+    renderCount();
+  }
+
+  function stopCount() { if (abortCtl) abortCtl.abort(); }
+  function discard() {
+    const c = S.current;
+    S.current = null;
+    if (c && c.photoUrl) URL.revokeObjectURL(c.photoUrl);
+    if (c && c.status === 'counting' && abortCtl) abortCtl.abort();
+    renderCount();
+  }
+  function startManual() {
+    S.current = { file: null, photoUrl: null, items: [{ id: uid(), name: '', sku: '', qty: 1, onList: true, conf: 'high', note: '' }], status: 'done', error: null, info: null, manual: true };
+    renderCount();
+    const first = $('#rows .name'); if (first) first.focus();
+  }
+  function addItem() {
+    const c = S.current; if (!c) return;
+    c.items.push({ id: uid(), name: '', sku: '', qty: 1, onList: true, conf: 'high', note: '' });
+    renderCount();
+    const all = document.querySelectorAll('#rows .name');
+    if (all.length) all[all.length - 1].focus();
+  }
+  function addToSession() {
+    const c = S.current; if (!c) return;
+    const items = c.items.map(i => ({ name: i.name.trim(), sku: i.sku || '', qty: i.qty })).filter(i => i.name && i.qty > 0);
+    if (!items.length) { toast('Nothing to add yet. Enter a part with a count above zero.'); return; }
+    S.saved.unshift({ id: uid(), ts: Date.now(), date: S.date || stamp(Date.now()).date, tech: S.tech.trim(), items });
+    persist();
+    if (c.photoUrl) URL.revokeObjectURL(c.photoUrl);
+    S.current = null;
+    toast('Added to session. Ready for the next shelf.');
+    renderCount();
+  }
+
+  /* ---------- count tab ---------- */
+  function captureCard() {
+    const noAI = cfg.ready && !cfg.aiReady;
+    return h('div', { class: 'card capture' },
+      h('p', { class: 'lede', text: 'Lay the parts out with labels facing up, then photograph one shelf or bin at a time.' }),
+      h('div', { class: 'btnrow' },
+        h('label', { class: 'btn primary', for: 'cam', tabindex: '0', role: 'button', onkeydown: kbd }, 'Take photo'),
+        h('label', { class: 'btn', for: 'pick', tabindex: '0', role: 'button', onkeydown: kbd }, 'Choose photo')),
+      noAI ? h('p', { class: 'notice', text: "Photo counting isn't set up on this server yet. You can still enter counts by hand." }) : null,
+      h('button', { class: 'link', type: 'button', onclick: startManual }, 'Enter a count by hand'));
+  }
+
+  function rowEl(it) {
+    const flags = [];
+    if (!it.onList) flags.push('Not on parts list');
+    if (it.conf === 'low') flags.push('Low confidence');
+    else if (it.conf === 'medium') flags.push('Check count');
+    const skuEl = h('p', { class: 'sku', text: it.sku ? 'SKU ' + it.sku : '' });
+    const name = h('input', { class: 'name', type: 'text', value: it.name, list: 'partsList', autocomplete: 'off', placeholder: 'Part name', 'aria-label': 'Part name',
+      oninput: e => {
+        it.name = e.target.value;
+        const hit = findPart(it.name);
+        it.sku = hit ? hit.sku : '';
+        if (hit) it.onList = true;
+        skuEl.textContent = it.sku ? 'SKU ' + it.sku : '';
+        updateTotal();
+      } });
+    const qty = h('input', { class: 'qty', type: 'number', inputmode: 'numeric', min: '0', step: '1', value: String(it.qty), 'aria-label': 'Count',
+      oninput: e => { it.qty = Math.max(0, Math.floor(Number(e.target.value) || 0)); updateTotal(); } });
+    const dec = h('button', { class: 'sbtn', type: 'button', 'aria-label': 'Subtract one', onclick: () => { it.qty = Math.max(0, it.qty - 1); qty.value = String(it.qty); updateTotal(); } }, '−');
+    const inc = h('button', { class: 'sbtn', type: 'button', 'aria-label': 'Add one', onclick: () => { it.qty += 1; qty.value = String(it.qty); updateTotal(); } }, '+');
+    const rm = h('button', { class: 'rm', type: 'button', onclick: () => { S.current.items = S.current.items.filter(x => x !== it); renderCount(); } }, 'Remove');
+    return h('li', { class: 'row', 'data-id': it.id },
+      name,
+      skuEl,
+      h('div', { class: 'row-ctrl' }, h('div', { class: 'step' }, dec, qty, inc), rm),
+      flags.length ? h('div', { class: 'flags' }, flags.map(f => h('span', { class: 'pill', text: f }))) : null,
+      it.note ? h('p', { class: 'rnote', text: it.note }) : null);
+  }
+
+  function updateTotal() {
+    const el = $('#total'); const c = S.current;
+    if (!el || !c) return;
+    const live = c.items.filter(i => i.name.trim() && i.qty > 0);
+    const units = live.reduce((a, i) => a + i.qty, 0);
+    el.textContent = plural(live.length, 'type', 'types') + ' · ' + plural(units, 'unit', 'units');
+  }
+
+  function renderCount() {
+    const box = $('#count-body');
+    box.replaceChildren();
+    renderTally();
+    const c = S.current;
+    if (!c) { box.append(captureCard()); return; }
+    const card = h('div', { class: 'card' });
+    if (c.photoUrl) card.append(h('img', { class: 'shot', src: c.photoUrl, alt: 'Photo being counted' }));
+    if (c.status === 'counting') {
+      card.append(
+        h('div', { class: 'status' }, h('span', { class: 'spin', 'aria-hidden': 'true' }),
+          h('div', {}, h('p', { class: 'status-t', text: 'Counting parts…' }), h('p', { class: 'muted', text: 'Usually 10 to 30 seconds.' }))),
+        h('div', { class: 'btnrow' }, h('button', { class: 'btn', type: 'button', onclick: stopCount }, 'Stop')));
+      box.append(card);
+      return;
+    }
+    if (c.error) card.append(h('p', { class: 'notice', text: c.error }));
+    else if (c.info) card.append(h('p', { class: 'muted', text: c.info }));
+    card.append(h('p', { class: 'hint', text: c.manual ? 'Add each part and how many you have.' : 'Check each number against the shelf. Tap a count to type it, or use + and −.' }));
+    const list = h('ul', { class: 'rows', id: 'rows' });
+    c.items.forEach(it => list.append(rowEl(it)));
+    card.append(list,
+      h('div', { class: 'totalbar' },
+        h('button', { class: 'btn small', type: 'button', onclick: addItem }, '+ Add item'),
+        h('p', { class: 'total', id: 'total' })),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn primary wide', type: 'button', onclick: addToSession }, 'Add to session'),
+        h('div', { class: 'btnrow' },
+          c.file ? h('button', { class: 'btn', type: 'button', onclick: () => runCount() }, 'Recount') : null,
+          h('button', { class: 'btn ghost', type: 'button', onclick: discard }, 'Discard'))));
+    box.append(card);
+    updateTotal();
+  }
+
+  /* ---------- session tab ---------- */
+  function computeTotals() {
+    const m = new Map();
+    for (const c of S.saved) for (const it of c.items) {
+      const k = it.sku ? 'sku:' + norm(it.sku) : 'name:' + norm(it.name);
+      const cur = m.get(k) || { name: it.name, sku: it.sku || '', qty: 0 };
+      cur.qty += it.qty; m.set(k, cur);
+    }
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  const sumUnits = () => S.saved.reduce((a, c) => a + c.items.reduce((x, i) => x + i.qty, 0), 0);
+
+  function renderTally() {
+    $('#tally').textContent = S.saved.length ? plural(S.saved.length, 'count', 'counts') + ' · ' + plural(sumUnits(), 'unit', 'units') : 'Nothing counted yet';
+    const b = $('#badge');
+    b.hidden = !S.saved.length; b.textContent = String(S.saved.length);
+  }
+
+  function fmtTime(ts) {
+    try { return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
+  }
+  function stamp(ts) {
+    const d = new Date(ts); const p = n => String(n).padStart(2, '0');
+    return { date: d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()), time: p(d.getHours()) + ':' + p(d.getMinutes()) };
+  }
+  const dateOf = c => c.date || stamp(c.ts).date;
+  function fmtDate(ymd) {
+    const [y, m, d] = String(ymd).split('-').map(Number);
+    try { return new Date(y, m - 1, d).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return String(ymd); }
+  }
+  function detailRows() {
+    const rows = [['Date', 'Time', 'Technician', 'Part', 'SKU', 'Quantity']];
+    for (const c of [...S.saved].reverse()) { const s = stamp(c.ts); for (const it of c.items) rows.push([dateOf(c), s.time, c.tech || '', it.name, it.sku || '', it.qty]); }
+    return rows;
+  }
+  function totalRows() { return [['Part', 'SKU', 'Total quantity'], ...computeTotals().map(t => [t.name, t.sku, t.qty])]; }
+  function csvCell(v) {
+    if (typeof v === 'number') return String(v);
+    let s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  const toCSV = rows => '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+
+  function exportRows(kind) {
+    const rows = kind === 'detail' ? detailRows() : totalRows();
+    const name = 'shelf-count-' + kind + '-' + stamp(Date.now()).date + '.csv';
+    try {
+      const url = URL.createObjectURL(new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8' }));
+      const a = h('a', { href: url, download: name });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast('Saved ' + name);
+    } catch (e) { toast("Couldn't create the file. Try again."); }
+  }
+
+  function renderSession() {
+    const v = $('#session-body');
+    v.replaceChildren();
+    if (!S.saved.length) {
+      v.append(h('div', { class: 'card empty' },
+        h('p', { class: 'empty-t', text: 'No counts in this session' }),
+        h('p', { class: 'muted', text: 'Photograph a shelf on the Count tab, check the numbers, and tap Add to session. Totals for every shelf collect here.' })));
+      return;
+    }
+    const totals = computeTotals();
+    v.append(h('div', { class: 'card' },
+      h('h2', { text: 'Totals' }),
+      h('div', {}, totals.map(t => h('div', { class: 'trow' }, h('span', {}, h('span', { text: t.name }), t.sku ? h('span', { class: 'sku', text: 'SKU ' + t.sku }) : null), h('span', { class: 'tagnum', text: String(t.qty) }))))));
+    v.append(h('div', { class: 'card' },
+      h('h2', { text: 'Counts' }),
+      h('div', {}, S.saved.map(c => {
+        const units = c.items.reduce((a, i) => a + i.qty, 0);
+        return h('details', { class: 'count' },
+          h('summary', {},
+            h('span', { class: 'c-title', text: c.tech || 'Count' }),
+            h('span', { class: 'muted', text: fmtDate(dateOf(c)) + ' · ' + plural(units, 'unit', 'units') })),
+          h('div', { class: 'c-body' },
+            c.items.map(i => h('div', { class: 'trow' }, h('span', {}, h('span', { text: i.name }), i.sku ? h('span', { class: 'sku', text: 'SKU ' + i.sku }) : null), h('span', { class: 'tagnum', text: String(i.qty) }))),
+            confirmBtn('btn small', 'Remove this count', 'Tap again to remove', () => {
+              S.saved = S.saved.filter(x => x !== c); persist(); renderSession(); renderTally();
+            })));
+      }))));
+    v.append(h('div', { class: 'card' },
+      h('h2', { text: 'Export' }),
+      h('p', { class: 'muted', text: 'Spreadsheet files (CSV) that open in Excel or Sheets.' }),
+      h('div', { class: 'btnrow' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => exportRows('totals') }, 'Export totals'),
+        h('button', { class: 'btn', type: 'button', onclick: () => exportRows('detail') }, 'Export detail')),
+      confirmBtn('btn ghost', 'Clear session', 'Tap again to clear all counts', () => {
+        S.saved = []; persist(); renderSession(); renderTally(); toast('Session cleared.');
+      })));
+  }
+
+  /* ---------- parts tab ---------- */
+  function refreshDatalist() {
+    $('#partsList').replaceChildren(...S.parts.map(p => h('option', { value: p.name, label: p.sku || null })));
+    $('#parts-n').textContent = plural(S.parts.length, 'part', 'parts') + ' on the list';
+  }
+  function renderParts() {
+    $('#parts-text').value = S.parts.map(partLine).join('\n');
+    $('#parts-reset').replaceChildren(confirmBtn('btn small', 'Restore original list', 'Tap again to replace the list', async () => {
+      S.partsCustom = false; persist();
+      await loadParts();
+      renderParts(); toast('Original list restored.');
+    }));
+    refreshDatalist();
+  }
+
+  /* ---------- tabs + wiring ---------- */
+  function setTab(name) {
+    S.tab = name;
+    for (const id of ['count', 'session', 'parts']) $('#v-' + id).hidden = id !== name;
+    document.querySelectorAll('.tab').forEach(b => {
+      if (b.dataset.tab === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    if (name === 'session') renderSession();
+    if (name === 'parts') renderParts();
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+
+  $('#tech').value = S.tech;
+  $('#date').value = S.date;
+  $('#code').value = S.code;
+  $('#date').addEventListener('input', e => { S.date = e.target.value; S.dateTouched = true; });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !S.dateTouched) { S.date = stamp(Date.now()).date; $('#date').value = S.date; }
+  });
+  $('#tech').addEventListener('input', e => { S.tech = e.target.value; persist(); });
+  $('#code').addEventListener('input', e => { S.code = e.target.value.trim(); saveCode(S.code); });
+  $('#parts-text').addEventListener('input', e => {
+    S.parts = parseParts(e.target.value);
+    S.partsCustom = true;
+    persist(); refreshDatalist();
+  });
+  for (const id of ['cam', 'pick']) {
+    $('#' + id).addEventListener('change', e => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (f) startCount(f);
+    });
+  }
+
+  refreshDatalist();
+  renderCount();
+})();
+</script>
+</body>
+</html>
