@@ -50,6 +50,10 @@ Open http://localhost:3000. The camera button needs HTTPS on a real phone, so te
 
 Edit `parts.json` (an array of `{ "name": "...", "sku": "..." }`) and push. Railway redeploys and every phone picks up the new list on its next load. The server uses this list for counting. The app also loads it behind the scenes to match names and offer autocomplete when a technician adds an item by hand. It is not shown anywhere in the app.
 
+## Checking the parts list loaded
+
+In Railway, open the latest deployment's **Deploy Logs**. You should see `Loaded 182 parts from parts.json`. If you see `WARNING: parts.json was not found`, the file is not at the top level of the repository next to `server.js`. Counting is turned off until it is.
+
 ## Notes
 
 - Photos are resized on the phone to 1600 pixels on the long side before upload.

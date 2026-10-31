@@ -18,17 +18,21 @@ const EMAIL_FROM = process.env.EMAIL_FROM || 'Inventory Count <onboarding@resend
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MINUTE) || 20;
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const PARTS_FILE = path.join(__dirname, 'parts.json');
+const PARTS_FILES = [path.join(__dirname, 'parts.json'), path.join(PUBLIC_DIR, 'parts.json')];
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function loadDefaultParts() {
-  try {
-    const list = JSON.parse(fs.readFileSync(PARTS_FILE, 'utf8'));
-    return cleanParts(list) || [];
-  } catch (e) {
-    console.error('Could not read parts.json:', e.message);
-    return [];
+  for (const file of PARTS_FILES) {
+    try {
+      const list = cleanParts(JSON.parse(fs.readFileSync(file, 'utf8')));
+      if (list && list.length) {
+        console.log(`Loaded ${list.length} parts from ${path.relative(__dirname, file)}`);
+        return list;
+      }
+    } catch (e) { /* try the next location */ }
   }
+  console.error('WARNING: parts.json was not found or is empty. Put it next to server.js. Counting is disabled until it loads.');
+  return [];
 }
 
 // Returns a cleaned parts array, or null when the input is not a usable list.
@@ -111,6 +115,18 @@ function makeLimiter(max) {
 const rateLimited = makeLimiter(RATE_LIMIT);
 const submitLimited = makeLimiter(5);
 
+// Match what the model returned against the parts list so names and SKUs are always exact.
+const squash = v => String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9]+/g, '');
+function matchToList(item) {
+  const name = String(item.name == null ? '' : item.name).trim();
+  const sku = String(item.sku == null ? '' : item.sku).trim();
+  const hit = DEFAULT_PARTS.find(p => p.name.toLowerCase() === name.toLowerCase())
+    || (sku && DEFAULT_PARTS.find(p => p.sku && p.sku.toLowerCase() === sku.toLowerCase()))
+    || (squash(name) && DEFAULT_PARTS.find(p => squash(p.name) === squash(name)));
+  if (hit) return { ...item, name: hit.name, sku: hit.sku, onList: true };
+  return { ...item, sku: '', onList: false };
+}
+
 // ---- app ----
 const app = express();
 app.disable('x-powered-by');
@@ -134,6 +150,7 @@ app.post('/api/count', express.json({ limit: '12mb' }), async (req, res) => {
 
   if (!codeOk(req)) return fail(401, 'auth', 'Access code is missing or wrong.');
   if (!API_KEY) return fail(503, 'not_configured', 'The server has no ANTHROPIC_API_KEY set.');
+  if (!DEFAULT_PARTS.length) return fail(503, 'no_parts', 'The parts list is missing on the server.');
   if (rateLimited(req.ip)) return fail(429, 'rate_limited', 'Too many counts in a minute.');
 
   const { image, mediaType } = req.body || {};
@@ -181,7 +198,7 @@ app.post('/api/count', express.json({ limit: '12mb' }), async (req, res) => {
     const items = extractJsonArray(text);
     if (!items) return fail(502, 'unreadable', 'The reply could not be read as a list.');
     res.set('Cache-Control', 'no-store');
-    res.json({ items: items.filter(i => i && typeof i === 'object').slice(0, 200) });
+    res.json({ items: items.filter(i => i && typeof i === 'object').slice(0, 200).map(matchToList) });
   } catch (e) {
     console.error('Count request failed:', e.name, e.message);
     if (e.name === 'TimeoutError') return fail(504, 'upstream', 'The count took too long.');
@@ -303,6 +320,7 @@ app.post('/api/submit', express.json({ limit: '1mb' }), async (req, res) => {
   }
 });
 
+app.get('/parts.json', (req, res) => res.status(404).end());
 app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: 0 }));
 
 // JSON body errors (too large, malformed) from the parser above

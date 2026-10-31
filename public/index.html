@@ -355,7 +355,7 @@ details.count summary::-webkit-details-marker { display: none; }
     let sku = String(r.sku == null ? '' : r.sku).trim();
     const hit = findPart(name) || (sku ? S.parts.find(p => norm(p.sku) === norm(sku)) : null);
     if (hit) { name = hit.name; sku = hit.sku; onList = true; }
-    else sku = '';
+    else if (!onList) sku = '';
     const n = Math.round(Number(r.count));
     const conf = ['high', 'medium', 'low'].includes(r.confidence) ? r.confidence : 'high';
     return { id: uid(), name, sku, qty: Number.isFinite(n) && n > 0 ? n : 0, onList, conf, note: String(r.note || '').trim() };
@@ -365,6 +365,7 @@ details.count summary::-webkit-details-marker { display: none; }
     switch (code) {
       case 'auth': return 'The access code is missing or wrong. Enter it above, then tap Recount.';
       case 'not_configured': return "Photo counting isn't set up on this server yet. Enter counts by hand.";
+      case 'no_parts': return 'The parts list is missing on the server. Let your manager know.';
       case 'rate_limited': return 'Too many counts in a row. Wait a minute, then tap Recount.';
       case 'too_large': case 'http_413': return 'That photo is too large. Take it again.';
       case 'network': return "Couldn't reach the server. Check your signal, then tap Recount.";
