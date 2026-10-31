@@ -299,8 +299,9 @@ details.count summary::-webkit-details-marker { display: none; }
   const kbd = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } };
 
   /* ---------- counting ---------- */
-  async function prepareImage(file) {
-    const max = 1600;
+  const PHOTOS = new Map(); // count id -> photo file, kept in memory only (too big for localStorage)
+  const EMAIL_PHOTO_BUDGET = 24 * 1024 * 1024; // base64 characters across all photos in one email
+  async function prepareImage(file, max = 1600, quality = 0.85) {
     const draw = async bmp => {
       const sc = Math.min(1, max / Math.max(bmp.width, bmp.height));
       const w = Math.round(bmp.width * sc), ht = Math.round(bmp.height * sc);
@@ -308,7 +309,7 @@ details.count summary::-webkit-details-marker { display: none; }
       cv.width = w; cv.height = ht;
       cv.getContext('2d').drawImage(bmp, 0, 0, w, ht);
       if (bmp.close) bmp.close();
-      return new Promise(res => cv.toBlob(res, 'image/jpeg', 0.85));
+      return new Promise(res => cv.toBlob(res, 'image/jpeg', quality));
     };
     try {
       let bmp;
@@ -429,7 +430,9 @@ details.count summary::-webkit-details-marker { display: none; }
     const c = S.current; if (!c) return;
     const items = c.items.map(i => ({ name: i.name.trim(), sku: i.sku || '', qty: i.qty })).filter(i => i.name && i.qty > 0);
     if (!items.length) { toast('Nothing to add yet. Enter a part with a count above zero.'); return; }
-    S.saved.unshift({ id: uid(), ts: Date.now(), date: S.date || stamp(Date.now()).date, tech: S.tech.trim(), items });
+    const cid = uid();
+    if (c.file) PHOTOS.set(cid, c.file);
+    S.saved.unshift({ id: cid, ts: Date.now(), date: S.date || stamp(Date.now()).date, tech: S.tech.trim(), items });
     persist();
     if (c.photoUrl) URL.revokeObjectURL(c.photoUrl);
     S.current = null;
@@ -597,14 +600,25 @@ details.count summary::-webkit-details-marker { display: none; }
       const headers = { 'content-type': 'application/json' };
       if (S.code) headers['x-access-code'] = S.code;
       const counts = [...S.saved].reverse().map(c => ({
-        date: dateOf(c), time: stamp(c.ts).time, tech: c.tech || '',
+        id: c.id, date: dateOf(c), time: stamp(c.ts).time, tech: c.tech || '',
         items: c.items.map(i => ({ name: i.name, sku: i.sku || '', qty: i.qty }))
       }));
+      // Attach the photos that are still on this phone, smaller than the ones sent for counting.
+      let budget = EMAIL_PHOTO_BUDGET;
+      for (const c of counts) {
+        const f = PHOTOS.get(c.id);
+        delete c.id;
+        if (!f) continue;
+        try {
+          const b64 = await blobToBase64(await prepareImage(f, 1280, 0.72));
+          if (b64.length <= budget) { c.photo = b64; budget -= b64.length; }
+        } catch (e) { /* send this count without its photo */ }
+      }
       const r = await fetch('api/submit', { method: 'POST', headers, body: JSON.stringify({ tech: S.tech.trim(), submitted: fmtTime(Date.now()), counts }) });
       let j = null;
       try { j = await r.json(); } catch (e) { /* no JSON body */ }
       if (!r.ok) throw { code: (j && j.code) || 'http_' + r.status };
-      S.saved = []; persist(); renderTally();
+      S.saved = []; PHOTOS.clear(); persist(); renderTally();
       toast('Sent. Your counts were emailed and this session is cleared.');
     } catch (e) { S.sendError = submitErr(e && e.code); }
     S.sending = false;
@@ -635,7 +649,7 @@ details.count summary::-webkit-details-marker { display: none; }
           h('div', { class: 'c-body' },
             c.items.map(i => h('div', { class: 'trow' }, h('span', {}, h('span', { text: i.name }), i.sku ? h('span', { class: 'sku', text: 'SKU ' + i.sku }) : null), h('span', { class: 'tagnum', text: String(i.qty) }))),
             confirmBtn('btn small', 'Remove this count', 'Tap again to remove', () => {
-              S.saved = S.saved.filter(x => x !== c); persist(); renderSession(); renderTally();
+              PHOTOS.delete(c.id); S.saved = S.saved.filter(x => x !== c); persist(); renderSession(); renderTally();
             })));
       }))));
     v.append(h('div', { class: 'card' },
@@ -648,7 +662,7 @@ details.count summary::-webkit-details-marker { display: none; }
       h('p', { class: 'muted', text: (cfg.emailReady ? 'Or save' : 'Save') + ' the spreadsheet (CSV) to this phone. It opens in Excel or Sheets.' }),
       h('button', { class: cfg.emailReady ? 'btn wide' : 'btn primary wide', type: 'button', onclick: () => exportRows() }, 'Export spreadsheet'),
       confirmBtn('btn ghost', 'Clear session', 'Tap again to clear all counts', () => {
-        S.saved = []; persist(); renderSession(); renderTally(); toast('Session cleared.');
+        S.saved = []; PHOTOS.clear(); persist(); renderSession(); renderTally(); toast('Session cleared.');
       })));
   }
 

@@ -231,9 +231,12 @@ function cleanSubmission(b) {
       if (!name || !Number.isFinite(qty) || qty < 0 || qty > 100000) continue;
       items.push({ name, sku: oneLine(i.sku, 60), qty });
     }
-    if (items.length) counts.push({ date, time: /^\d{2}:\d{2}$/.test(String(c.time)) ? String(c.time) : '', tech: oneLine(c.tech, 80), items });
+    const photo = typeof c.photo === 'string' && c.photo.startsWith('/9j/') && /^[A-Za-z0-9+/=]+$/.test(c.photo) && c.photo.length <= 8_000_000 ? c.photo : '';
+    if (items.length) counts.push({ date, time: /^\d{2}:\d{2}$/.test(String(c.time)) ? String(c.time) : '', tech: oneLine(c.tech, 80), items, photo });
   }
   if (!counts.length) return null;
+  let budget = 28_000_000; // base64 characters; Resend allows 40 MB per email
+  for (const c of counts) { if (c.photo && c.photo.length <= budget) budget -= c.photo.length; else c.photo = ''; }
   return { tech: oneLine(b.tech, 80), submitted: oneLine(b.submitted, 60), counts };
 }
 
@@ -268,6 +271,12 @@ async function sendSubmissionEmail(sub) {
   const reportList = [...grouped.values()].sort((a, b) => a.date.localeCompare(b.date) || a.tech.localeCompare(b.tech) || a.name.localeCompare(b.name));
   const reportCsv = toCSV([['Date processed', 'Technician', 'Part', 'SKU', 'Quantity'], ...reportList.map(r => [r.date, r.tech, r.name, r.sku, r.qty])]);
 
+  const photoFiles = [];
+  sub.counts.forEach((c, n) => {
+    if (c.photo) photoFiles.push({ filename: `photo-${String(photoFiles.length + 1).padStart(2, '0')}${c.time ? '-' + c.time.replace(':', '') : ''}.jpg`, content: c.photo, label: c.items.map(i => i.name).slice(0, 3).join(', ') + (c.items.length > 3 ? ', ...' : '') });
+  });
+  const photoNote = photoFiles.length ? `${photoFiles.length} photo${photoFiles.length === 1 ? ' is' : 's are'} attached.` : '';
+
   const th = 'text-align:left;padding:4px 10px;border-bottom:1px solid #ccc';
   const td = 'padding:4px 10px;border-bottom:1px solid #eee';
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#14212B">
@@ -277,9 +286,10 @@ ${sub.submitted ? '<b>Submitted:</b> ' + escHtml(sub.submitted) + '<br>' : ''}<b
 <table style="border-collapse:collapse"><tr><th style="${th}">Part</th><th style="${th}">SKU</th><th style="${th};text-align:right">Qty</th></tr>
 ${totals.map(t => `<tr><td style="${td}">${escHtml(t.name)}</td><td style="${td}">${escHtml(t.sku)}</td><td style="${td};text-align:right">${t.qty}</td></tr>`).join('\n')}
 </table>
-<p>The spreadsheet is attached.</p></div>`;
+<p>The spreadsheet is attached.${photoNote ? ' ' + photoNote : ''}</p>
+${photoFiles.length ? '<ul>' + photoFiles.map(f => `<li>${escHtml(f.filename)}: ${escHtml(f.label)}</li>`).join('') + '</ul>' : ''}</div>`;
   const text = `Technician: ${who}\nDate processed: ${dates.join(', ')}\n${sub.submitted ? 'Submitted: ' + sub.submitted + '\n' : ''}Counts: ${sub.counts.length}  Units: ${units}\n\n` +
-    totals.map(t => `${t.qty}  ${t.name}${t.sku ? ' (' + t.sku + ')' : ''}`).join('\n') + '\n\nThe spreadsheet is attached.';
+    totals.map(t => `${t.qty}  ${t.name}${t.sku ? ' (' + t.sku + ')' : ''}`).join('\n') + '\n\nThe spreadsheet is attached.' + (photoNote ? ' ' + photoNote + '\n' + photoFiles.map(f => `${f.filename}: ${f.label}`).join('\n') : '');
 
   const r = await fetch(RESEND_BASE_URL + '/emails', {
     method: 'POST',
@@ -291,7 +301,8 @@ ${totals.map(t => `<tr><td style="${td}">${escHtml(t.name)}</td><td style="${td}
       html,
       text,
       attachments: [
-        { filename: `inventory-count-${day}.csv`, content: Buffer.from(reportCsv, 'utf8').toString('base64') }
+        { filename: `inventory-count-${day}.csv`, content: Buffer.from(reportCsv, 'utf8').toString('base64') },
+        ...photoFiles.map(f => ({ filename: f.filename, content: f.content }))
       ]
     }),
     signal: AbortSignal.timeout(30000)
@@ -303,7 +314,7 @@ ${totals.map(t => `<tr><td style="${td}">${escHtml(t.name)}</td><td style="${td}
   }
 }
 
-app.post('/api/submit', express.json({ limit: '1mb' }), async (req, res) => {
+app.post('/api/submit', express.json({ limit: '40mb' }), async (req, res) => {
   const fail = (status, code, message) => res.status(status).json({ code, message });
   if (!codeOk(req)) return fail(401, 'auth', 'Access code is missing or wrong.');
   if (!RESEND_API_KEY || !EMAIL_TO.length) return fail(503, 'not_configured', 'Email is not set up on this server.');
