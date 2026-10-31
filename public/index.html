@@ -68,7 +68,7 @@ p { margin: 0; }
 .tally { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
 
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.who { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.who { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .who .wide { grid-column: 1 / -1; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .field label { font: 600 14px/1 var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
@@ -76,7 +76,9 @@ input[type="text"], input[type="password"], input[type="date"], textarea {
   width: 100%; font: 500 17px/1.3 var(--font-body); color: var(--ink); background: var(--surface-2);
   border: 1px solid var(--line); border-radius: 6px; padding: 12px; min-width: 0;
 }
-input[type="date"] { min-height: 50px; }
+input[type="date"] { min-height: 50px; display: block; -webkit-appearance: none; appearance: none; max-width: 100%; box-sizing: border-box; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; min-width: 0; }
+input { box-sizing: border-box; }
 textarea { resize: vertical; min-height: 280px; line-height: 1.5; }
 input:focus-visible, textarea:focus-visible, button:focus-visible, .btn:focus-visible, summary:focus-visible {
   outline: 3px solid var(--accent); outline-offset: 2px;
@@ -156,7 +158,7 @@ details.count summary::-webkit-details-marker { display: none; }
   position: fixed; left: 50%; transform: translateX(-50%); z-index: 6; bottom: calc(82px + env(safe-area-inset-bottom, 0px));
   max-width: min(520px, calc(100% - 32px)); background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 6px; font-weight: 500; font-size: 16px; text-align: center;
 }
-@media (max-width: 380px) { .who { grid-template-columns: 1fr; } }
+@media (max-width: 380px) { .who { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -169,8 +171,9 @@ details.count summary::-webkit-details-marker { display: none; }
 
   <section id="v-count" class="col">
     <div class="card who">
-      <div class="field"><label for="tech">Technician</label><input id="tech" type="text" autocomplete="off" placeholder="Your name"></div>
-      <div class="field"><label for="date">Date</label><input id="date" type="date"></div>
+      <div class="field"><label for="first">First name</label><input id="first" type="text" autocomplete="given-name" placeholder="First"></div>
+      <div class="field"><label for="last">Last name</label><input id="last" type="text" autocomplete="family-name" placeholder="Last"></div>
+      <div class="field wide"><label for="date">Date</label><input id="date" type="date"></div>
       <div class="field wide" id="code-field" hidden><label for="code">Access code</label><input id="code" type="password" autocomplete="off" placeholder="Ask your manager"></div>
     </div>
     <div id="count-body" class="col"></div>
@@ -226,7 +229,7 @@ details.count summary::-webkit-details-marker { display: none; }
     try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
   }
   function persist() {
-    try { localStorage.setItem(KEY, JSON.stringify({ tech: S.tech, parts: S.parts, saved: S.saved })); } catch (e) { /* storage unavailable */ }
+    try { localStorage.setItem(KEY, JSON.stringify({ first: S.first, last: S.last, parts: S.parts, saved: S.saved })); } catch (e) { /* storage unavailable */ }
   }
   function loadCode() { try { return localStorage.getItem(CODE_KEY) || ''; } catch (e) { return ''; } }
   function saveCode(v) { try { localStorage.setItem(CODE_KEY, v); } catch (e) { /* storage unavailable */ } }
@@ -235,8 +238,10 @@ details.count summary::-webkit-details-marker { display: none; }
   const savedParts = Array.isArray(prev.parts)
     ? prev.parts.filter(p => p && typeof p.name === 'string' && p.name).map(p => ({ name: p.name, sku: String(p.sku || '') }))
     : [];
+  const fullName = () => (S.first.trim() + ' ' + S.last.trim()).trim();
   const S = {
-    tech: typeof prev.tech === 'string' ? prev.tech : '',
+    first: typeof prev.first === 'string' ? prev.first : (typeof prev.tech === 'string' ? prev.tech.trim().split(/\s+/)[0] || '' : ''),
+    last: typeof prev.last === 'string' ? prev.last : (typeof prev.tech === 'string' ? prev.tech.trim().split(/\s+/).slice(1).join(' ') : ''),
     parts: savedParts,
     saved: Array.isArray(prev.saved) ? prev.saved.filter(c => c && Array.isArray(c.items)) : [],
     code: loadCode(),
@@ -461,7 +466,7 @@ details.count summary::-webkit-details-marker { display: none; }
     if (!items.length) { toast('Nothing to add yet. Enter a part with a count above zero.'); return; }
     const cid = uid();
     if (c.file) keepPhoto(cid, c.file);
-    S.saved.unshift({ id: cid, ts: Date.now(), date: S.date || stamp(Date.now()).date, tech: S.tech.trim(), items });
+    S.saved.unshift({ id: cid, ts: Date.now(), date: S.date || stamp(Date.now()).date, tech: fullName(), items });
     persist();
     if (c.photoUrl) URL.revokeObjectURL(c.photoUrl);
     S.current = null;
@@ -584,7 +589,7 @@ details.count summary::-webkit-details-marker { display: none; }
   function reportRows() {
     const m = new Map();
     for (const c of S.saved) for (const it of c.items) {
-      const tech = c.tech || S.tech.trim();
+      const tech = c.tech || fullName();
       const k = [dateOf(c), norm(tech), it.sku ? 'sku:' + norm(it.sku) : 'name:' + norm(it.name)].join('|');
       const cur = m.get(k) || { date: dateOf(c), tech, name: it.name, sku: it.sku || '', qty: 0 };
       cur.qty += it.qty; m.set(k, cur);
@@ -622,7 +627,7 @@ details.count summary::-webkit-details-marker { display: none; }
   }
   async function submitSession() {
     if (S.sending) return;
-    if (!S.tech.trim()) { S.sendError = 'Enter your name in the Technician box on the Count tab first.'; renderSession(); return; }
+    if (!S.first.trim() || !S.last.trim()) { S.sendError = 'Enter your first and last name on the Count tab first.'; renderSession(); return; }
     S.sending = true; S.sendError = ''; renderSession();
     try {
       await cfgPromise;
@@ -645,7 +650,7 @@ details.count summary::-webkit-details-marker { display: none; }
           if (b64.length <= budget) { c.photo = b64; budget -= b64.length; }
         } catch (e) { /* send this count without its photo */ }
       }
-      const r = await fetch('api/submit', { method: 'POST', headers, body: JSON.stringify({ tech: S.tech.trim(), submitted: fmtTime(Date.now()), counts }) });
+      const r = await fetch('api/submit', { method: 'POST', headers, body: JSON.stringify({ tech: fullName(), submitted: fmtTime(Date.now()), counts }) });
       let j = null;
       try { j = await r.json(); } catch (e) { /* no JSON body */ }
       if (!r.ok) throw { code: (j && j.code) || 'http_' + r.status };
@@ -713,14 +718,16 @@ details.count summary::-webkit-details-marker { display: none; }
   }
   document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 
-  $('#tech').value = S.tech;
+  $('#first').value = S.first;
+  $('#last').value = S.last;
   $('#date').value = S.date;
   $('#code').value = S.code;
   $('#date').addEventListener('input', e => { S.date = e.target.value; S.dateTouched = true; });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && !S.dateTouched) { S.date = stamp(Date.now()).date; $('#date').value = S.date; }
   });
-  $('#tech').addEventListener('input', e => { S.tech = e.target.value; persist(); });
+  $('#first').addEventListener('input', e => { S.first = e.target.value; persist(); });
+  $('#last').addEventListener('input', e => { S.last = e.target.value; persist(); });
   $('#code').addEventListener('input', e => { S.code = e.target.value.trim(); saveCode(S.code); });
   $('#code').addEventListener('change', () => loadParts());
   for (const id of ['cam', 'pick']) {

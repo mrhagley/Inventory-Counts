@@ -14,6 +14,7 @@ const ACCESS_CODE = process.env.ACCESS_CODE || '';
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const RESEND_BASE_URL = (process.env.RESEND_BASE_URL || 'https://api.resend.com').replace(/\/+$/, '');
 const EMAIL_TO = (process.env.EMAIL_TO || '').split(',').map(x => x.trim()).filter(Boolean);
+const PHOTO_EMAIL_TO = (process.env.PHOTO_EMAIL_TO || '').split(',').map(x => x.trim()).filter(Boolean);
 const EMAIL_FROM = process.env.EMAIL_FROM || 'Inventory Count <onboarding@resend.dev>';
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MINUTE) || 20;
 
@@ -293,27 +294,39 @@ ${photoFiles.length ? '<ul>' + photoFiles.map(f => `<li>${escHtml(f.filename)}: 
   const text = `Technician: ${who}\nDate processed: ${dates.join(', ')}\n${sub.submitted ? 'Submitted: ' + sub.submitted + '\n' : ''}Counts: ${sub.counts.length}  Units: ${units}\n\n` +
     totals.map(t => `${t.qty}  ${t.name}${t.sku ? ' (' + t.sku + ')' : ''}`).join('\n') + '\n\nThe spreadsheet is attached.' + (photoNote ? ' ' + photoNote + '\n' + photoFiles.map(f => `${f.filename}: ${f.label}`).join('\n') : '');
 
-  const r = await fetch(RESEND_BASE_URL + '/emails', {
-    method: 'POST',
-    headers: { authorization: 'Bearer ' + RESEND_API_KEY, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      from: EMAIL_FROM,
-      to: EMAIL_TO,
-      subject: `Inventory count - ${who} - ${day}`,
-      html,
-      text,
-      attachments: [
-        { filename: `inventory-count-${day}.csv`, content: Buffer.from(reportCsv, 'utf8').toString('base64') },
-        ...photoFiles.map(f => ({ filename: f.filename, content: f.content }))
-      ]
-    }),
-    signal: AbortSignal.timeout(30000)
-  });
-  if (!r.ok) {
-    let detail = '';
-    try { detail = (await r.text()).slice(0, 300); } catch (e) { /* no body */ }
-    throw new Error('Resend returned ' + r.status + ' ' + detail);
+  const send = async payload => {
+    const r = await fetch(RESEND_BASE_URL + '/emails', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + RESEND_API_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({ from: EMAIL_FROM, ...payload }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (!r.ok) {
+      let detail = '';
+      try { detail = (await r.text()).slice(0, 300); } catch (e) { /* no body */ }
+      throw new Error('Resend returned ' + r.status + ' ' + detail);
+    }
+  };
+  const csvFile = { filename: `inventory-count-${day}.csv`, content: Buffer.from(reportCsv, 'utf8').toString('base64') };
+  const splitPhotos = PHOTO_EMAIL_TO.length > 0 && photoFiles.length > 0;
+
+  if (!splitPhotos) {
+    await send({ to: EMAIL_TO, subject: `Inventory count - ${who} - ${day}`, html, text,
+      attachments: [csvFile, ...photoFiles.map(f => ({ filename: f.filename, content: f.content }))] });
+    return;
   }
+
+  // Spreadsheet email without photos, then a separate email with only the photos.
+  const strip = v => v.replace(/<p>The spreadsheet is attached\.[\s\S]*$/, '<p>The spreadsheet is attached. The photos were sent in a separate email.</p></div>');
+  await send({ to: EMAIL_TO, subject: `Inventory count - ${who} - ${day}`,
+    html: strip(html),
+    text: text.replace(/\n\nThe spreadsheet is attached\.[\s\S]*$/, '\n\nThe spreadsheet is attached. The photos were sent in a separate email.'),
+    attachments: [csvFile] });
+  const list = photoFiles.map(f => `${f.filename}: ${f.label}`);
+  await send({ to: PHOTO_EMAIL_TO, subject: `Inventory count photos - ${who} - ${day}`,
+    html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#14212B"><p><b>Technician:</b> ${escHtml(who)}<br><b>Date processed:</b> ${escHtml(dates.join(', '))}<br><b>Photos:</b> ${photoFiles.length}</p><ul>${list.map(l => `<li>${escHtml(l)}</li>`).join('')}</ul></div>`,
+    text: `Technician: ${who}\nDate processed: ${dates.join(', ')}\nPhotos: ${photoFiles.length}\n\n${list.join('\n')}`,
+    attachments: photoFiles.map(f => ({ filename: f.filename, content: f.content })) });
 }
 
 app.post('/api/submit', express.json({ limit: '40mb' }), async (req, res) => {
@@ -349,6 +362,6 @@ const DEFAULT_PARTS = loadDefaultParts();
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Shelf Count listening on port ${PORT}`);
   console.log(API_KEY ? `Model: ${MODEL}` : 'WARNING: ANTHROPIC_API_KEY is not set. Photo counting is disabled.');
-  console.log(RESEND_API_KEY && EMAIL_TO.length ? `Email submissions go to: ${EMAIL_TO.join(', ')}` : 'Note: RESEND_API_KEY or EMAIL_TO is not set. The Submit and email button is hidden.');
+  console.log(RESEND_API_KEY && EMAIL_TO.length ? `Email submissions go to: ${EMAIL_TO.join(', ')}${PHOTO_EMAIL_TO.length ? '; photos go to: ' + PHOTO_EMAIL_TO.join(', ') : ''}` : 'Note: RESEND_API_KEY or EMAIL_TO is not set. The Submit and email button is hidden.');
   if (!ACCESS_CODE) console.log('Note: ACCESS_CODE is not set. Anyone with the link can use your API key.');
 });

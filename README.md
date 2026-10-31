@@ -31,6 +31,7 @@ When a technician taps **Submit and email** on the Session tab, the server email
 
 1. Create an account at https://resend.com and create an API key. Set it as `RESEND_API_KEY`.
 2. Set `EMAIL_TO` to the address or addresses that should receive the counts.
+   Optional: set `PHOTO_EMAIL_TO` to send the photos to a different address in a separate email. If it is not set, the photos are attached to the same email as the spreadsheet.
 3. Testing: with no `EMAIL_FROM` set, Resend only delivers to the email address on your Resend account.
 4. To send to anyone else, add and verify your company's domain in Resend (a few DNS records), then set `EMAIL_FROM`, for example `Inventory Count <counts@yourcompany.com>`.
 
