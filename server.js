@@ -231,7 +231,7 @@ function cleanSubmission(b) {
       if (!name || !Number.isFinite(qty) || qty < 0 || qty > 100000) continue;
       items.push({ name, sku: oneLine(i.sku, 60), qty });
     }
-    const photo = typeof c.photo === 'string' && c.photo.startsWith('/9j/') && /^[A-Za-z0-9+/=]+$/.test(c.photo) && c.photo.length <= 8_000_000 ? c.photo : '';
+    const photo = typeof c.photo === 'string' && (c.photo.startsWith('/9j/') || c.photo.startsWith('iVBOR')) && /^[A-Za-z0-9+/=]+$/.test(c.photo) && c.photo.length <= 8_000_000 ? c.photo : '';
     if (items.length) counts.push({ date, time: /^\d{2}:\d{2}$/.test(String(c.time)) ? String(c.time) : '', tech: oneLine(c.tech, 80), items, photo });
   }
   if (!counts.length) return null;
@@ -273,9 +273,11 @@ async function sendSubmissionEmail(sub) {
 
   const photoFiles = [];
   sub.counts.forEach((c, n) => {
-    if (c.photo) photoFiles.push({ filename: `photo-${String(photoFiles.length + 1).padStart(2, '0')}${c.time ? '-' + c.time.replace(':', '') : ''}.jpg`, content: c.photo, label: c.items.map(i => i.name).slice(0, 3).join(', ') + (c.items.length > 3 ? ', ...' : '') });
+    if (c.photo) photoFiles.push({ filename: `photo-${String(photoFiles.length + 1).padStart(2, '0')}${c.time ? '-' + c.time.replace(':', '') : ''}.${c.photo.startsWith('iVBOR') ? 'png' : 'jpg'}`, content: c.photo, label: c.items.map(i => i.name).slice(0, 3).join(', ') + (c.items.length > 3 ? ', ...' : '') });
   });
-  const photoNote = photoFiles.length ? `${photoFiles.length} photo${photoFiles.length === 1 ? ' is' : 's are'} attached.` : '';
+  const nPhotoCounts = sub.counts.filter(c => c.photo).length;
+  console.log(`Email: ${sub.counts.length} counts, ${nPhotoCounts} with photos attached`);
+  const photoNote = photoFiles.length ? `${photoFiles.length} photo${photoFiles.length === 1 ? ' is' : 's are'} attached.` + (photoFiles.length < sub.counts.length ? ` ${sub.counts.length - photoFiles.length} count${sub.counts.length - photoFiles.length === 1 ? ' has' : 's have'} no photo.` : '') : 'No photos were attached to this submission.';
 
   const th = 'text-align:left;padding:4px 10px;border-bottom:1px solid #ccc';
   const td = 'padding:4px 10px;border-bottom:1px solid #eee';

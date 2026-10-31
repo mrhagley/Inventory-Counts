@@ -299,7 +299,36 @@ details.count summary::-webkit-details-marker { display: none; }
   const kbd = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } };
 
   /* ---------- counting ---------- */
-  const PHOTOS = new Map(); // count id -> photo file, kept in memory only (too big for localStorage)
+  // Photos for the email are stored in IndexedDB (too big for localStorage) so they survive a page reload.
+  const PHOTOS = new Map(); // count id -> email-sized JPEG blob (memory copy / fallback)
+  const photoJobs = new Set();
+  const idb = (() => {
+    let dbp;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      try {
+        const rq = indexedDB.open('inventory-count-photos', 1);
+        rq.onupgradeneeded = () => rq.result.createObjectStore('p');
+        rq.onsuccess = () => res(rq.result);
+        rq.onerror = () => rej(rq.error);
+      } catch (e) { rej(e); }
+    }));
+    const run = (mode, fn) => open().then(db => new Promise((res, rej) => {
+      const tx = db.transaction('p', mode); const r = fn(tx.objectStore('p'));
+      tx.oncomplete = () => res(r && r.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+    })).catch(() => undefined);
+    return { put: (k, v) => run('readwrite', st => st.put(v, k)), get: k => run('readonly', st => st.get(k)),
+             del: k => run('readwrite', st => st.delete(k)), clear: () => run('readwrite', st => st.clear()) };
+  })();
+  function keepPhoto(id, file) {
+    const job = (async () => {
+      const blob = await prepareImage(file, 1280, 0.72);
+      PHOTOS.set(id, blob);
+      await idb.put(id, blob);
+    })().catch(() => {}).finally(() => photoJobs.delete(job));
+    photoJobs.add(job);
+  }
+  const dropPhoto = id => { PHOTOS.delete(id); idb.del(id); };
+  const dropAllPhotos = () => { PHOTOS.clear(); idb.clear(); };
   const EMAIL_PHOTO_BUDGET = 24 * 1024 * 1024; // base64 characters across all photos in one email
   async function prepareImage(file, max = 1600, quality = 0.85) {
     const draw = async bmp => {
@@ -431,7 +460,7 @@ details.count summary::-webkit-details-marker { display: none; }
     const items = c.items.map(i => ({ name: i.name.trim(), sku: i.sku || '', qty: i.qty })).filter(i => i.name && i.qty > 0);
     if (!items.length) { toast('Nothing to add yet. Enter a part with a count above zero.'); return; }
     const cid = uid();
-    if (c.file) PHOTOS.set(cid, c.file);
+    if (c.file) keepPhoto(cid, c.file);
     S.saved.unshift({ id: cid, ts: Date.now(), date: S.date || stamp(Date.now()).date, tech: S.tech.trim(), items });
     persist();
     if (c.photoUrl) URL.revokeObjectURL(c.photoUrl);
@@ -605,12 +634,14 @@ details.count summary::-webkit-details-marker { display: none; }
       }));
       // Attach the photos that are still on this phone, smaller than the ones sent for counting.
       let budget = EMAIL_PHOTO_BUDGET;
+      await Promise.all([...photoJobs]);
       for (const c of counts) {
-        const f = PHOTOS.get(c.id);
+        const id = c.id;
         delete c.id;
+        const f = PHOTOS.get(id) || await idb.get(id);
         if (!f) continue;
         try {
-          const b64 = await blobToBase64(await prepareImage(f, 1280, 0.72));
+          const b64 = await blobToBase64(f);
           if (b64.length <= budget) { c.photo = b64; budget -= b64.length; }
         } catch (e) { /* send this count without its photo */ }
       }
@@ -618,7 +649,7 @@ details.count summary::-webkit-details-marker { display: none; }
       let j = null;
       try { j = await r.json(); } catch (e) { /* no JSON body */ }
       if (!r.ok) throw { code: (j && j.code) || 'http_' + r.status };
-      S.saved = []; PHOTOS.clear(); persist(); renderTally();
+      S.saved = []; dropAllPhotos(); persist(); renderTally();
       toast('Sent. Your counts were emailed and this session is cleared.');
     } catch (e) { S.sendError = submitErr(e && e.code); }
     S.sending = false;
@@ -649,7 +680,7 @@ details.count summary::-webkit-details-marker { display: none; }
           h('div', { class: 'c-body' },
             c.items.map(i => h('div', { class: 'trow' }, h('span', {}, h('span', { text: i.name }), i.sku ? h('span', { class: 'sku', text: 'SKU ' + i.sku }) : null), h('span', { class: 'tagnum', text: String(i.qty) }))),
             confirmBtn('btn small', 'Remove this count', 'Tap again to remove', () => {
-              PHOTOS.delete(c.id); S.saved = S.saved.filter(x => x !== c); persist(); renderSession(); renderTally();
+              dropPhoto(c.id); S.saved = S.saved.filter(x => x !== c); persist(); renderSession(); renderTally();
             })));
       }))));
     v.append(h('div', { class: 'card' },
@@ -662,7 +693,7 @@ details.count summary::-webkit-details-marker { display: none; }
       h('p', { class: 'muted', text: (cfg.emailReady ? 'Or save' : 'Save') + ' the spreadsheet (CSV) to this phone. It opens in Excel or Sheets.' }),
       h('button', { class: cfg.emailReady ? 'btn wide' : 'btn primary wide', type: 'button', onclick: () => exportRows() }, 'Export spreadsheet'),
       confirmBtn('btn ghost', 'Clear session', 'Tap again to clear all counts', () => {
-        S.saved = []; PHOTOS.clear(); persist(); renderSession(); renderTally(); toast('Session cleared.');
+        S.saved = []; dropAllPhotos(); persist(); renderSession(); renderTally(); toast('Session cleared.');
       })));
   }
 
